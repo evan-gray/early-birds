@@ -18,7 +18,7 @@ module.exports = async function(callback) {
     await initialized.methods
       .registerChain(
         2,
-        "0x000000000000000000000000eea2Fc1D255Fd28aA15c6c2324Ad40B03267f9c5"
+        "0x0000000000000000000000006793E8E0E8ac22d71c65c2bf82e9B142dEf9eCDb"
       )
       .send({
         value: 0,

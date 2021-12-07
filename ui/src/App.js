@@ -1,4 +1,8 @@
-import { createNonce, parseSequenceFromLogEth } from "@certusone/wormhole-sdk";
+import {
+  createNonce,
+  getEmitterAddressEth,
+  parseSequenceFromLogEth,
+} from "@certusone/wormhole-sdk";
 import getSignedVAAWithRetry from "@certusone/wormhole-sdk/lib/esm/rpc/getSignedVAAWithRetry";
 import { hexlify, hexStripZeros, hexZeroPad } from "@ethersproject/bytes";
 import { JsonRpcProvider } from "@ethersproject/providers";
@@ -8,6 +12,7 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  TextField,
   Toolbar,
   Tooltip,
   Typography,
@@ -18,9 +23,9 @@ import { useEthereumProvider } from "./EthereumProviderContext";
 import { NFTImplementation__factory } from "./ethers-contracts";
 
 const WORMHOLE_RPC_HOSTS = ["http://localhost:7071"];
-const BSC_CONTRACT_ADDRESS = "0xc34175A79ACca40392bECD22ff10fAeBFE780Ae7";
+const BSC_CONTRACT_ADDRESS = "0xB349FB172D6D5f693b0aA1C6eEc4c61cFd6846f4";
 const BSC_RPC = "http://localhost:8546";
-const ETH_CONTRACT_ADDRESS = "0xc34175A79ACca40392bECD22ff10fAeBFE780Ae7";
+const ETH_CONTRACT_ADDRESS = "0x6793E8E0E8ac22d71c65c2bf82e9B142dEf9eCDb";
 const ETH_RPC = "http://localhost:8545";
 
 const chainToColor = (c) =>
@@ -41,10 +46,11 @@ const chainToName = (c) =>
     : "[In Transit]";
 const chainToNetwork = (c) =>
   hexStripZeros(hexlify(c === 2 ? 1337 : c === 4 ? 1397 : 0));
+const networkToChain = (n) => (n === 1337 ? 2 : n === 1397 ? 4 : 0);
 const chainToContract = (c) =>
   c === 2 ? ETH_CONTRACT_ADDRESS : c === 4 ? BSC_CONTRACT_ADDRESS : "";
 
-function NFTSquare({ tokenId, chainId }) {
+function NFTSquare({ tokenId, chainId, fetchNFTs }) {
   const { provider, signer, signerAddress } = useEthereumProvider();
   const handleClick = useCallback(() => {
     if (!signer) return;
@@ -68,6 +74,7 @@ function NFTSquare({ tokenId, chainId }) {
       );
       const sendReceipt = await sendTx.wait();
       console.log(sendReceipt);
+      fetchNFTs();
       const sequence = parseSequenceFromLogEth(
         sendReceipt,
         await sendNFT.wormhole()
@@ -75,7 +82,7 @@ function NFTSquare({ tokenId, chainId }) {
       const { vaaBytes } = await getSignedVAAWithRetry(
         WORMHOLE_RPC_HOSTS,
         chainId,
-        chainToContract(chainId),
+        getEmitterAddressEth(chainToContract(chainId)),
         sequence.toString()
       );
       console.log(vaaBytes);
@@ -89,8 +96,9 @@ function NFTSquare({ tokenId, chainId }) {
       const recTx = await recNFT.completeWormholeTransfer(vaaBytes);
       const recReceipt = await recTx.wait();
       console.log(recReceipt);
+      fetchNFTs();
     })();
-  }, [tokenId, chainId, provider, signer, signerAddress]);
+  }, [tokenId, chainId, provider, signer, signerAddress, fetchNFTs]);
 
   return (
     <Tooltip title={`Current Chain: ${chainToName(chainId)}`}>
@@ -111,42 +119,129 @@ function NFTSquare({ tokenId, chainId }) {
   );
 }
 
+function Recovery({ fetchNFTs }) {
+  const { provider, signer, chainId: evmChainId } = useEthereumProvider();
+  const [recoveryTx, setRecoveryTx] = useState("");
+  const handleChange = useCallback((event) => {
+    setRecoveryTx(event.target.value);
+  }, []);
+  const handleClick = useCallback(() => {
+    (async () => {
+      const chainId = networkToChain(evmChainId);
+      console.log(chainId);
+      if (chainId !== 2 && chainId !== 4) return;
+      const toChain = chainId === 2 ? 4 : 2;
+      const sendNFT = NFTImplementation__factory.connect(
+        chainToContract(chainId),
+        signer
+      );
+      const sendReceipt = await provider.getTransactionReceipt(recoveryTx);
+      console.log(sendReceipt);
+      const sequence = parseSequenceFromLogEth(
+        sendReceipt,
+        await sendNFT.wormhole()
+      );
+      const { vaaBytes } = await getSignedVAAWithRetry(
+        WORMHOLE_RPC_HOSTS,
+        chainId,
+        getEmitterAddressEth(chainToContract(chainId)),
+        sequence.toString()
+      );
+      console.log(vaaBytes);
+      await provider.send("wallet_switchEthereumChain", [
+        { chainId: chainToNetwork(toChain) },
+      ]);
+      const recNFT = NFTImplementation__factory.connect(
+        chainToContract(toChain),
+        signer
+      );
+      const recTx = await recNFT.completeWormholeTransfer(vaaBytes);
+      const recReceipt = await recTx.wait();
+      console.log(recReceipt);
+      fetchNFTs();
+    })();
+  }, [evmChainId, provider, signer, recoveryTx, fetchNFTs]);
+  return (
+    <Card
+      sx={{
+        m: 2,
+        textAlign: "center",
+      }}
+      elevation={4}
+    >
+      <CardContent>
+        <Typography variant="h5" sx={{ mb: 2 }}>
+          Recovery
+        </Typography>
+        <div>
+          <TextField
+            onChange={handleChange}
+            value={recoveryTx}
+            margin="dense"
+            size="small"
+            sx={{ width: 620, maxWidth: "100%" }}
+          />
+        </div>
+        <Button
+          variant="contained"
+          color="primary"
+          sx={{ mt: 2 }}
+          onClick={handleClick}
+        >
+          Recover
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function App() {
   const { connect, disconnect, signerAddress } = useEthereumProvider();
   const [state, setState] = useState([]);
-  useEffect(() => {
+
+  const fetchNFTs = useCallback(() => {
     (async () => {
       const bscProvider = new JsonRpcProvider(BSC_RPC);
       const bscNFT = NFTImplementation__factory.connect(
         BSC_CONTRACT_ADDRESS,
         bscProvider
       );
-      const bscOwners = [];
+      const bscPromises = [];
       for (let i = 1; i <= 20; i++) {
-        try {
-          const owner = await bscNFT.ownerOf(i);
-          bscOwners.push(owner);
-        } catch (e) {
-          // owner query for nonexistent token
-          bscOwners.push(undefined);
-        }
+        bscPromises.push(
+          (async () => {
+            try {
+              const owner = await bscNFT.ownerOf(i);
+              return owner;
+            } catch (e) {
+              // owner query for nonexistent token
+              return undefined;
+            }
+          })()
+        );
       }
+      const bscOwners = await Promise.all(bscPromises);
       console.log("bscOwners", bscOwners);
       const ethProvider = new JsonRpcProvider(ETH_RPC);
       const ethNFT = NFTImplementation__factory.connect(
         ETH_CONTRACT_ADDRESS,
         ethProvider
       );
-      const ethOwners = [];
+      const ethPromises = [];
       for (let i = 1; i <= 20; i++) {
-        try {
-          const owner = await ethNFT.ownerOf(i);
-          ethOwners.push(owner);
-        } catch (e) {
-          // owner query for nonexistent token
-          ethOwners.push(undefined);
-        }
+        ethPromises.push(
+          (async () => {
+            try {
+              const owner = await ethNFT.ownerOf(i);
+              return owner;
+            } catch (e) {
+              // owner query for nonexistent token
+              return undefined;
+            }
+          })()
+        );
       }
+      const ethOwners = await Promise.all(ethPromises);
       console.log("ethOwners", ethOwners);
       const currentChain = [];
       for (let i = 0; i <= 19; i++) {
@@ -164,6 +259,9 @@ function App() {
       setState(currentChain);
     })();
   }, []);
+  useEffect(() => {
+    fetchNFTs();
+  }, [fetchNFTs]);
   return (
     <>
       <AppBar position="static">
@@ -213,13 +311,19 @@ function App() {
                 }}
               >
                 {state.map((c, idx) => (
-                  <NFTSquare key={idx} tokenId={idx} chainId={c} />
+                  <NFTSquare
+                    key={idx}
+                    tokenId={idx + 1}
+                    chainId={c}
+                    fetchNFTs={fetchNFTs}
+                  />
                 ))}
               </Box>
             </>
           )}
         </CardContent>
       </Card>
+      <Recovery fetchNFTs={fetchNFTs} />
     </>
   );
 }
