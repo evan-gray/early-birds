@@ -23,9 +23,9 @@ import { useEthereumProvider } from "./EthereumProviderContext";
 import { NFTImplementation__factory } from "./ethers-contracts";
 
 const WORMHOLE_RPC_HOSTS = ["http://localhost:7071"];
-const BSC_CONTRACT_ADDRESS = "0xB349FB172D6D5f693b0aA1C6eEc4c61cFd6846f4";
+const BSC_CONTRACT_ADDRESS = "0x4339316e04CFfB5961D1c41fEF8E44bfA2A7fBd1";
 const BSC_RPC = "http://localhost:8546";
-const ETH_CONTRACT_ADDRESS = "0x6793E8E0E8ac22d71c65c2bf82e9B142dEf9eCDb";
+const ETH_CONTRACT_ADDRESS = "0x4339316e04CFfB5961D1c41fEF8E44bfA2A7fBd1";
 const ETH_RPC = "http://localhost:8545";
 
 const chainToColor = (c) =>

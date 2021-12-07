@@ -24,6 +24,8 @@ contract NFTImplementation is NFTGetters, NFTSetters, Context, IERC721, IERC721M
 
     // Initiate a Transfer over Wormhole
     function wormholeTransfer(uint256 tokenID, uint16 recipientChain, bytes32 recipient, uint32 nonce) public payable returns (uint64 sequence) {
+        //solhint-disable-next-line max-line-length
+        require(_isApprovedOrOwner(_msgSender(), tokenID), "ERC721: transfer caller is not owner nor approved");
         string memory uriString = tokenURI(tokenID);
         burn(tokenID);
         sequence = logTransfer(NFTStructs.Transfer({
